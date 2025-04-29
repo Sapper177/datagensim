@@ -1,7 +1,6 @@
 package database
 
 import (
-	"fmt"
 	"time"
 	"context"
 
@@ -16,7 +15,8 @@ type RedisClient struct {
 }
 
 // NewRedisClient creates a new Redis client with the given options.
-func NewRedisClient(addr string, psswd string, db int, readTimeout time.Duration, writeTimeout time.Duration) *RedisClient {
+func NewRedisClient(ctx *context.Context, addr string, psswd string, db int,
+	readTimeout time.Duration, writeTimeout time.Duration) *RedisClient {
 	options := &redis.Options{
 		Addr:         addr,
 		Password:     psswd,
@@ -28,6 +28,7 @@ func NewRedisClient(addr string, psswd string, db int, readTimeout time.Duration
 	return &RedisClient{
 		client:  client,
 		options: options,
+		ctx: ctx,
 	}
 }
 
@@ -102,12 +103,18 @@ func (r* RedisClient) GetData(data_id string) (map[string]string, error) {
 //		frequency: <value>
 //		calibration: <calib_id>
 //		calibration_type: <type>
+func (r* RedisClient) GetDataInfo(data_id string) (map[string]string, error) {
+	retrievedMap, err := r.client.HGetAll(r.ctx, data_id + "_info").Result()
+	return retrievedMap, HandleDbError(err, data_id + "_info", "retrieve data info")
+}
 
 // 	<calib_id>:	<- example analog calibration
 //		<slope>: <value>
-//		<intercept>: <value>
-//		<constants>:
-//			<c1>: <value>
-//			<c2>: <value>
-//			<c3>: <value>
-//			...
+//		<c1>: <value>
+//		<c2>: <value>
+//		<c3>: <value>
+//		...
+func (r* RedisClient) GetCalibInfo(calib_id string) (map[string]string, error) {
+	retrievedMap, err := r.client.HGetAll(r.ctx, calib_id).Result()
+	return retrievedMap, HandleDbError(err, calib_id, "retrieve data info")
+}

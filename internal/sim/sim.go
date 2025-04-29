@@ -2,11 +2,11 @@ package sim
 
 import (
 	"context"
-	"gosim/pkg/database"
+	"fmt"
 	"log"
 	"time"
 
-	"pkg/database"
+	"github.com/Sapper177/datagensim/pkg/database"
 )
 
 
@@ -14,8 +14,16 @@ type PacketInfo struct {
     PacketId    int
     PacketType  string
     PacketSize  int
+    Direction   bool // true = tx, false = rx
+    Error       bool // true = error, false = no error
     TxTime      time.Time
-    ProcessTime time.Time
+    ProcessTime time.Duration
+}
+
+type PayloadChans struct {
+    writeChan chan<- Packet // push to write
+    readChan <-chan Packet  // pull from read
+    ticker *time.Ticker
 }
 
 func Sim(ctx *context.Context, cfg *Config) {
@@ -24,6 +32,7 @@ func Sim(ctx *context.Context, cfg *Config) {
 
     // Set up database interface
     db := database.NewRedisClient(
+        ctx,
         cfg.DbHost + ":" + cfg.DbPort,
         cfg.DbPassword,
         cfg.DbNum,
@@ -32,35 +41,66 @@ func Sim(ctx *context.Context, cfg *Config) {
     )
 
     // Get payload configs from database
-    payloadConfigs, err := 
+    payloadIds, err := db.GetPayloads(cfg.BusName)
+    if err != nil {
+        log.Fatalf("Did not find payload IDs for Bus %s: %s", cfg.BusName, err)
+    }
 
     // Create channel that will be used contain sent packet data
     infoChan := make(chan PacketInfo, 100)
 
-    // Create channel for sending packets
-    packetChan := make(chan Packet, 50)
+    // initialize payload routines
+    initPayloads(payloadIds, db, infoChan)
+
+    // initialize payload monitor
+    initPayloadMon(infoChan)
+
+
+    // for range ticker.C {
+    //     for i := range dataItems {
+    //         dataItems[i].Update()
+    //     }
+    //     payload := constructPayload(dataItems)
+    //     packet.Payload = payload
+    //     sendPacket(bus, packet)
+    // }
+}
+
+func initPayloads(payloadIds []string, db *database.RedisClient, infoChan chan<- PacketInfo) {
 
     // Spawn thread for each payload
+    for i := range payloadIds {
 
-
-
-
-    // packet := types.Packet{Protocol: "udp", SrcPort: 12345, DstPort: 54321}
-    // dataItems := []types.DataItem{
-    //     {Name: "Temperature", Type: types.Ramp, Value: 20.0, Min: 20.0, Max: 30.0, Step: 0.5},
-    //     {Name: "Pressure", Type: types.Sinusoidal, Value: 1.0, Min: 0.5, Max: 1.5, Frequency: 0.1, Phase: 0},
-    //     {Name: "Status", Type: types.Static, Value: 1},
-    // }
-
-    ticker := time.NewTicker(1 * time.Second)
-    defer ticker.Stop()
-
-    for range ticker.C {
-        for i := range dataItems {
-            dataItems[i].Update()
+        // get payload info
+        pInfo, err := db.GetPayloadInfo(payloadIds[i])
+        if err != nil {
+            log.Printf("No info found for ID: %s -> %s", pInfo, err)
         }
-        payload := constructPayload(dataItems)
-        packet.Payload = payload
-        sendPacket(bus, packet)
+        var freq time.Duration // hz
+        fmt.Sscanf(pInfo["frequency"], "%d", freq)  // get Hz in float
+        freq = 1000000 / freq * time.Microsecond // in microseconds
+
+        ticker := time.NewTicker(freq)
+        defer ticker.Stop()
+
+        // Create channels for i/o
+        cs := PayloadChans {
+            writeChan: make(chan Packet, 3 * len(payloadIds)),
+            readChan: make(chan Packet, len(payloadIds)),
+            ticker: ticker,
+        }
+
+        // spawn go routine for each payload
+        go payloadManager(cs, payloadIds[i], pInfo["packet_type"], )
     }
+}
+
+
+
+func initPayloadMon(cfg *Config, infoChan <-chan PacketInfo) {
+    // create a monitoring interface
+
+    //
+
+    // process PacketInfos
 }
