@@ -2,6 +2,7 @@ package sim
 
 import (
 	"time"
+    "sync"
 )
 
 type PayloadInfo struct {
@@ -27,6 +28,7 @@ func (p *PayloadInfo) updateAvgProcessingTime(processingTime time.Duration) {
 }
 
 type PayloadMonitor struct {
+    mu sync.RWMutex
     payloadMap map[string]PayloadInfo
     numPayloads int
     numTx int
@@ -35,9 +37,18 @@ type PayloadMonitor struct {
     numMbsTx float64
     numMbsRx float64
     numErrMbs float64
-    avgProcessingTime time.Duration
+    totalProcessingTime time.Duration
+    processedOperations int
+}
+// NewPayloadMonitor creates a new instance of the monitor.
+func NewPayloadMonitor() *PayloadMonitor {
+	return &PayloadMonitor{
+		payloadMap: make(map[string]PayloadInfo),
+	}
 }
 func (p *PayloadMonitor) addInfo(info PacketInfo) {
+    p.mu.Lock()
+	defer p.mu.Unlock()
     // check if payload exists in map
     id := string(info.PacketId)
 	payInfo, exists := p.payloadMap[id]
@@ -56,13 +67,14 @@ func (p *PayloadMonitor) addInfo(info PacketInfo) {
         payInfo = newInfo
 		p.numPayloads++
 	}
+    p.totalProcessingTime += info.ProcessTime
+	p.processedOperations++
     if info.Error { // if packet had an error
         payInfo.updateErrMbs(info.PacketSize)
         p.numErr++
         p.numErrMbs += payInfo.errMbs
     } else {
         payInfo.updateAvgProcessingTime(info.ProcessTime)   // update average processing time in packetInfo
-        p.updateAvgProcessingTime(payInfo.avgProcessingTime)    // update average processing time in payloadMonitor
         if info.Direction { // if packet is tx
             payInfo.updateTxMbs(info.PacketSize)
             p.numTx++
@@ -74,6 +86,15 @@ func (p *PayloadMonitor) addInfo(info PacketInfo) {
         }
     }
 }
-func (p *PayloadMonitor) updateAvgProcessingTime(processingTime time.Duration) {
-    p.avgProcessingTime = (processingTime + p.avgProcessingTime) / 2
+
+func procPayloadMon(cfg *Config, payloadMon *PayloadMonitor, infoChan <-chan PacketInfo) {
+    // process PacketInfos
+    for {
+        select {
+        case info := <-infoChan:
+            payloadMon.addInfo(info)
+        case <-time.After(cfg.MonitorInterval):
+            // do nothing
+        }
+    }
 }

@@ -52,18 +52,8 @@ func Sim(ctx *context.Context, cfg *Config) {
     // initialize payload routines
     initPayloads(payloadIds, db, infoChan)
 
-    // initialize payload monitor
-    initPayloadMon(infoChan)
-
-
-    // for range ticker.C {
-    //     for i := range dataItems {
-    //         dataItems[i].Update()
-    //     }
-    //     payload := constructPayload(dataItems)
-    //     packet.Payload = payload
-    //     sendPacket(bus, packet)
-    // }
+    // initialize payload monitoring
+    go InitMonitoring(cfg, infoChan)
 }
 
 func initPayloads(payloadIds []string, db *database.RedisClient, infoChan chan<- PacketInfo) {
@@ -93,14 +83,4 @@ func initPayloads(payloadIds []string, db *database.RedisClient, infoChan chan<-
         // spawn go routine for each payload
         go payloadManager(cs, payloadIds[i], pInfo["packet_type"], )
     }
-}
-
-
-
-func initPayloadMon(cfg *Config, infoChan <-chan PacketInfo) {
-    // create a monitoring interface
-
-    //
-
-    // process PacketInfos
 }

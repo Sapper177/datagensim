@@ -21,9 +21,12 @@ type Config struct {
 	DbNum		int
 	DbReadTimeout time.Duration
 	DbWriteTimeout time.Duration
-	
+
 	LogFile		string
 	LogLevel	string
+
+	MonitorInterval time.Duration
+	MetricsPort int
 }
 
 type LogLevels int

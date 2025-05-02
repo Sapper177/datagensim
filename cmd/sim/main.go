@@ -7,7 +7,7 @@ import (
 	"log/syslog"
 	"os"
 	"os/signal"
-	"internal/sim"
+	"github.com/Sapper177/datagensim/internal/sim"
 )
 
 func parseargs(cfg *sim.Config) {
