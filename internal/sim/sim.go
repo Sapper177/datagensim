@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/Sapper177/datagensim/pkg/database"
@@ -21,8 +22,8 @@ type PacketInfo struct {
 }
 
 type PayloadChans struct {
-    writeChan chan<- Packet // push to write
-    readChan <-chan Packet  // pull from read
+    writeChan chan Packet // push to write
+    readChan chan Packet  // pull from read
     ticker *time.Ticker
 }
 
@@ -50,13 +51,19 @@ func Sim(ctx *context.Context, cfg *Config) {
     infoChan := make(chan PacketInfo, 100)
 
     // initialize payload routines
-    initPayloads(payloadIds, db, infoChan)
+    payloadManagers := initPayloads(ctx, cfg, payloadIds, db, infoChan)
 
     // initialize payload monitoring
     go InitMonitoring(cfg, infoChan)
+
+    // Run Simulation
+    go sim(payloadManagers, infoChan)
 }
 
-func initPayloads(payloadIds []string, db *database.RedisClient, infoChan chan<- PacketInfo) {
+func initPayloads(ctx *context.Context, cfg *Config, payloadIds []string, db *database.RedisClient, infoChan chan<- PacketInfo) []*PayloadManager{
+
+    // create payload manager list
+    payloadManagers := make([]*PayloadManager, len(payloadIds))
 
     // Spawn thread for each payload
     for i := range payloadIds {
@@ -74,13 +81,54 @@ func initPayloads(payloadIds []string, db *database.RedisClient, infoChan chan<-
         defer ticker.Stop()
 
         // Create channels for i/o
-        cs := PayloadChans {
+        cs := PayloadChans{
             writeChan: make(chan Packet, 3 * len(payloadIds)),
             readChan: make(chan Packet, len(payloadIds)),
             ticker: ticker,
         }
 
         // spawn go routine for each payload
-        go payloadManager(cs, payloadIds[i], pInfo["packet_type"], )
+        go payloadManager(ctx, cfg, cs, payloadIds[i], pInfo["packet_type"], payloadManagers)
+    }
+    return payloadManagers
+}
+
+func sim(payloadManagers []*PayloadManager, infoChan chan<- PacketInfo) {
+    for _, pm := range payloadManagers {
+
+        // check if pm is ready to send from frequency
+        if pm != nil {
+
+            if time.Since(pm.lastProc) >= pm.freq {
+                // generate packet
+                pkt, err := pm.generatePacket(infoChan)
+                intId, err1 := strconv.Atoi(pm.id)
+                    if err1 != nil {
+                        log.Printf("Error converting payload ID to int: %s", err)
+                    }
+
+                if err != nil {
+                    log.Printf("Error generating packet: %s", err)
+
+                } else {
+                    pm.cs.writeChan <- pkt // send packet to write channel
+                    pm.lastProc = time.Now() // update last processed time
+                    // send packet info to info channel
+                    infoChan <- PacketInfo{
+                        PacketId:    intId,
+                        PacketType:  pm.pktType,
+                        PacketSize:  pkt.Size(),
+                        Direction:   true,
+                        Error:       false,
+                        TxTime:      time.Now(),
+                        ProcessTime: procTime,
+                    }
+                }
+
+            } // wait until process time is up
+
+        } else {
+            log.Printf("Payload manager is nil for ID: %s", pm.id)
+        }
     }
 }

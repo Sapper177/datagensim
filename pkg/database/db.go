@@ -28,7 +28,7 @@ func NewRedisClient(ctx *context.Context, addr string, psswd string, db int,
 	return &RedisClient{
 		client:  client,
 		options: options,
-		ctx: ctx,
+		ctx: *ctx,
 	}
 }
 
@@ -68,7 +68,7 @@ func (r *RedisClient) GetPayloads(bus string) ([]string, error) {
 
 // 	<payload_id>:
 //     	packet_type: <type>
-//     	frequency: <frequency>
+//     	frequency: <frequency>	// Hz
 func (r* RedisClient) GetPayloadInfo(payloadId string) (map[string]string, error) {
 	retrievedMap, err := r.client.HGetAll(r.ctx, payloadId).Result()
 	return retrievedMap, HandleDbError(err, payloadId, "retrieve bus payloads")

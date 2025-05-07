@@ -71,7 +71,7 @@ func (s *AFXdpSender) Send(ctx context.Context) error {
 	frameLen := len(packet)
 	// Fill all the frames in UMEM with the pre-generated UDP packet.
 
-	descs := xsk.GetDescs(math.MaxInt32, false)
+	descs := xsk.GetDescs(math.MaxInt32)
 	for i := range descs {
 		frameLen = copy(xsk.GetFrame(descs[i]), packet)
 	}
@@ -81,7 +81,7 @@ func (s *AFXdpSender) Send(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		default:
-			descs := xsk.GetDescs(xsk.NumFreeTxSlots(), false)
+			descs := xsk.GetDescs(xsk.NumFreeTxSlots())
 			for i := range descs {
 				descs[i].Len = uint32(frameLen)
 			}

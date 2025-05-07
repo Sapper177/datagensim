@@ -1,8 +1,6 @@
 package pktgen
 
 import (
-	"bytes"
-    "encoding/binary"
     "fmt"
 	"net"
 

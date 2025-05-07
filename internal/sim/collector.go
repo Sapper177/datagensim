@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"log"
-	"context"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
