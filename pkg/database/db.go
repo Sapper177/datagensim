@@ -96,6 +96,11 @@ func (r* RedisClient) GetData(data_id string) (map[string]string, error) {
 	return retrievedMap, HandleDbError(err, data_id, "retrieve data")
 }
 
+func (r* RedisClient) UpdateData(data_id string, data map[string]string) (error) {
+	err := r.client.HSet(r.ctx, data_id, data).Err()
+	return HandleDbError(err, data_id, "push data")
+}
+
 // 	<data_id>-info: <- example analog info
 //		min: <value>
 //		max: <value>

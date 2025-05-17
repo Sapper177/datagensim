@@ -1,10 +1,13 @@
-package sim
+package config
 
 import (
 	"fmt"
 	"net"
 	"time"
 )
+
+const FREQ_DEFAULT float64 = 1000.0 // default 1000 ms or 1 Hz
+const PHASE_DEFAULT float64 = 0.0   // default phase shift
 
 type Config struct {
 	BusName		string

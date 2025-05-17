@@ -2,35 +2,37 @@ package sim
 
 import (
 	"fmt"
-	"net/http"
 	"log"
+	"net/http"
+
+	"github.com/Sapper177/datagensim/pkg/config"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// PayloadMonitorCollector implements the prometheus.Collector interface
-type PayloadMonitorCollector struct {
-	monitor *PayloadMonitor // Pointer to the application's monitor state
+// payloadMonitorCollector implements the prometheus.Collector interface
+type payloadMonitorCollector struct {
+	monitor *payloadMonitor // Pointer to the application's monitor state
 
 	// Define descriptions for each metric we want to expose
-	numPayloads *prometheus.Desc
-	numTx       *prometheus.Desc
-	numRx       *prometheus.Desc
-	numErr      *prometheus.Desc
-	bytesTx     *prometheus.Desc // Changed from Mbs to Bytes for convention
-	bytesRx     *prometheus.Desc // Changed from Mbs to Bytes
-	errBytes    *prometheus.Desc // Changed from Mbs to Bytes
+	numPayloads                *prometheus.Desc
+	numTx                      *prometheus.Desc
+	numRx                      *prometheus.Desc
+	numErr                     *prometheus.Desc
+	bytesTx                    *prometheus.Desc // Changed from Mbs to Bytes for convention
+	bytesRx                    *prometheus.Desc // Changed from Mbs to Bytes
+	errBytes                   *prometheus.Desc // Changed from Mbs to Bytes
 	totalProcessingTimeSeconds *prometheus.Desc // Total time
-	processedOperations *prometheus.Desc // Total operations processed
+	processedOperations        *prometheus.Desc // Total operations processed
 }
 
-// NewPayloadMonitorCollector creates a new collector for the given monitor.
-func NewPayloadMonitorCollector(monitor *PayloadMonitor) *PayloadMonitorCollector {
-	return &PayloadMonitorCollector{
+// newPayloadMonitorCollector creates a new collector for the given monitor.
+func newPayloadMonitorCollector(monitor *payloadMonitor) *payloadMonitorCollector {
+	return &payloadMonitorCollector{
 		monitor: monitor,
 		numPayloads: prometheus.NewDesc(
-			"app_payload_monitor_current_payloads", // Metric name (lowercase_underscore)
+			"app_payload_monitor_current_payloads",               // Metric name (lowercase_underscore)
 			"Current number of active payloads being monitored.", // Help text
 			nil, // Label names (none for these simple metrics)
 			nil, // Constant labels (none)
@@ -72,23 +74,23 @@ func NewPayloadMonitorCollector(monitor *PayloadMonitor) *PayloadMonitorCollecto
 			nil,
 		),
 		totalProcessingTimeSeconds: prometheus.NewDesc(
-            "app_payload_monitor_processing_time_seconds_total", // Convention: seconds and _total
-            "Total cumulative processing time in seconds.",
-            nil,
-            nil,
-        ),
-        processedOperations: prometheus.NewDesc(
-            "app_payload_monitor_processed_operations_total", // Convention: _total
-            "Total number of operations whose processing time is recorded.",
-            nil,
-            nil,
-        ),
+			"app_payload_monitor_processing_time_seconds_total", // Convention: seconds and _total
+			"Total cumulative processing time in seconds.",
+			nil,
+			nil,
+		),
+		processedOperations: prometheus.NewDesc(
+			"app_payload_monitor_processed_operations_total", // Convention: _total
+			"Total number of operations whose processing time is recorded.",
+			nil,
+			nil,
+		),
 	}
 }
 
 // Describe sends the metric descriptions to the provided channel.
 // This is called by the Prometheus client library during initialization.
-func (collector *PayloadMonitorCollector) Describe(ch chan<- *prometheus.Desc) {
+func (collector *payloadMonitorCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collector.numPayloads
 	ch <- collector.numTx
 	ch <- collector.numRx
@@ -97,12 +99,12 @@ func (collector *PayloadMonitorCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- collector.bytesRx
 	ch <- collector.errBytes
 	ch <- collector.totalProcessingTimeSeconds
-    ch <- collector.processedOperations
+	ch <- collector.processedOperations
 }
 
 // Collect reads the current state and sends metrics to the provided channel.
 // This is called by the Prometheus client library whenever the /metrics endpoint is scraped.
-func (collector *PayloadMonitorCollector) Collect(ch chan<- prometheus.Metric) {
+func (collector *payloadMonitorCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Safely access the data from the monitor
 	collector.monitor.mu.RLock() // Use RLock for reading
@@ -156,30 +158,31 @@ func (collector *PayloadMonitorCollector) Collect(ch chan<- prometheus.Metric) {
 		errBytes, // Value is already float64
 	)
 	ch <- prometheus.MustNewConstMetric(
-         collector.totalProcessingTimeSeconds,
-         prometheus.CounterValue, // Total time is cumulative
-         totalProcessingTimeSeconds,
-     )
-     ch <- prometheus.MustNewConstMetric(
-         collector.processedOperations,
-         prometheus.CounterValue, // Total operations is cumulative
-         float64(processedOperations),
-     )
+		collector.totalProcessingTimeSeconds,
+		prometheus.CounterValue, // Total time is cumulative
+		totalProcessingTimeSeconds,
+	)
+	ch <- prometheus.MustNewConstMetric(
+		collector.processedOperations,
+		prometheus.CounterValue, // Total operations is cumulative
+		float64(processedOperations),
+	)
 
-    // Note: To get the average processing time in Grafana, you'd query
-    // `rate(app_payload_monitor_processing_time_seconds_total[5m]) / rate(app_payload_monitor_processed_operations_total[5m])`
-    // (adjusting the time window [5m] as needed)
+	// Note: To get the average processing time in Grafana, you'd query
+	// `rate(app_payload_monitor_processing_time_seconds_total[5m]) / rate(app_payload_monitor_processed_operations_total[5m])`
+	// (adjusting the time window [5m] as needed)
 }
+
 // Initialize the Prometheus HTTP handler
-func InitMonitoring(cfg *Config, infoChan <-chan PacketInfo) {
+func initMonitoring(cfg *config.Config, infoChan <-chan packetInfo) {
 	// Create application's monitor instance
-	monitor := NewPayloadMonitor()
+	monitor := newPayloadMonitor()
 
 	// Start payload monitor
 	go procPayloadMon(cfg, monitor, infoChan)
 
 	// Create the Prometheus collector for monitor
-	collector := NewPayloadMonitorCollector(monitor)
+	collector := newPayloadMonitorCollector(monitor)
 
 	// Create a Prometheus registry and register collector
 	registry := prometheus.NewRegistry()

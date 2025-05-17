@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"github.com/Sapper177/datagensim/internal/sim"
+	"github.com/Sapper177/datagensim/pkg/config"
 )
 
-func parseargs(cfg *sim.Config) {
+func parseargs(cfg *config.Config) {
 
 	// Get Bus Name
 	flag.StringVar(&cfg.BusName, "b", "MainBus", "Bus Name")
