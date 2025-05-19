@@ -31,7 +31,7 @@ func newDBExtract(id string, dataid string, dataInfo map[string]string, info map
 	}
 
 	// Convert string type to go Type
-	t, err := ConvertDtype(dataInfo["type"])
+	t, err := convertDtype(dataInfo["type"])
 	if err != nil {
 		log.Printf("Error converting data type for Payload (%s) - data ID (%s): %s", id, dataid, err)
 		return nil

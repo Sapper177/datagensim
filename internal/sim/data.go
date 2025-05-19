@@ -68,6 +68,7 @@ func selectDtype(dtypeStr string) dtype {
 type dataPoint interface {
 	appendData(buf []byte, val any) error
 	update(val any) (any, string)
+	getSize() uint16
 }
 
 type dataPointFloat struct {
@@ -86,7 +87,7 @@ func newDataPointFloat(dtype dtype, numEng *engine.NumEngine64, offset uint16, s
 	}
 }
 func (d *dataPointFloat) appendData(buf []byte, val any) error {
-	return WriteBits(buf, int(d.offset), val, int(d.size))
+	return writeBits(buf, int(d.offset), val, int(d.size))
 }
 func (d *dataPointFloat) update(val any) (any, string) {
 	newVal := 0.0
@@ -95,6 +96,9 @@ func (d *dataPointFloat) update(val any) (any, string) {
 		newVal = d.eng.Update(v)
 	}
 	return newVal, strconv.FormatFloat(newVal, 'f', -1, 64)
+}
+func (d *dataPointFloat) getSize() uint16 {
+	return d.size
 }
 
 type dataPointInt struct {
@@ -113,7 +117,7 @@ func newDataPoint32(dtype dtype, numEng *engine.NumEngineInt, offset uint16, siz
 	}
 }
 func (d *dataPointInt) appendData(buf []byte, val any) error {
-	return WriteBits(buf, int(d.offset), val, int(d.size))
+	return writeBits(buf, int(d.offset), val, int(d.size))
 }
 func (d *dataPointInt) update(val any) (any, string) {
 	var newVal int64 = 0
@@ -122,6 +126,9 @@ func (d *dataPointInt) update(val any) (any, string) {
 		newVal = d.eng.Update(v)
 	}
 	return newVal, strconv.FormatInt(newVal, 10)
+}
+func (d *dataPointInt) getSize() uint16 {
+	return d.size
 }
 
 type strDataPoint struct {
@@ -145,7 +152,7 @@ func (d *strDataPoint) appendData(buf []byte, val any) error {
 	case string:
 		valStr = v
 	}
-	return WriteBitsStr(buf, int(d.offset), valStr, int(d.size))
+	return writeBitsStr(buf, int(d.offset), valStr, int(d.size))
 }
 func (d *strDataPoint) update(val any) (any, string) {
 	newVal := ""
@@ -154,6 +161,9 @@ func (d *strDataPoint) update(val any) (any, string) {
 		newVal = d.eng.Update(v)
 	}
 	return newVal, newVal
+}
+func (d *strDataPoint) getSize() uint16 {
+	return d.size
 }
 
 type boolDataPoint struct {
@@ -170,7 +180,7 @@ func newBoolDataPoint(boolEng *engine.BoolEngine, offset uint16, size uint16) *b
 	}
 }
 func (d *boolDataPoint) appendData(buf []byte, val any) error {
-	return WriteBits(buf, int(d.offset), val, int(d.size))
+	return writeBits(buf, int(d.offset), val, int(d.size))
 }
 func (d *boolDataPoint) update(val any) (any, string) {
 	newVal := false
@@ -183,4 +193,7 @@ func (d *boolDataPoint) update(val any) (any, string) {
 		s = "1"
 	}
 	return newVal, s
+}
+func (d *boolDataPoint) getSize() uint16 {
+	return d.size
 }

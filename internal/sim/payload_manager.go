@@ -2,13 +2,14 @@ package sim
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"strconv"
 	"time"
 
+	"github.com/Sapper177/datagensim/ext/definitions"
 	"github.com/Sapper177/datagensim/pkg/config"
 	"github.com/Sapper177/datagensim/pkg/database"
 	"github.com/Sapper177/datagensim/pkg/engine"
@@ -25,6 +26,7 @@ const (
 )
 
 type payloadManager struct {
+	// packet info
 	pktType pktType // UDP, TCP, etc
 	src     net.IP
 	dst     net.IP
@@ -32,14 +34,28 @@ type payloadManager struct {
 	dstPort layers.UDPPort
 	srcMAC  net.HardwareAddr
 
+	// payload info
 	id       uint // payload id
 	freq     time.Duration
 	dpMap    map[string]dataPoint // data id -> data point
-	size     int                  //payload size
-	buffer   []byte
+	size     uint16               //payload size
+	pBuf     []byte
 	lastProc time.Time
 	cs       *PayloadChans
 	info     *packetInfo
+
+	// Header info
+	header *definitions.Header
+	hsize  uint16
+	hBuf   []byte
+
+	// Footer info
+	footer *definitions.Footer
+	fsize  uint16
+	fBuf   []byte
+
+	// combined full payload
+	payload []byte
 }
 
 func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *database.RedisClient) *payloadManager {
@@ -97,7 +113,7 @@ func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *data
 				float32(max),
 				float32(step),
 				time.Duration(dbEx.freq),
-				float32(PHASE_DEFAULT),
+				float32(config.PHASE_DEFAULT),
 				"sin",
 			)
 
@@ -129,7 +145,7 @@ func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *data
 				max,
 				step,
 				time.Duration(dbEx.freq),
-				PHASE_DEFAULT,
+				config.PHASE_DEFAULT,
 				"sin",
 			)
 
@@ -142,7 +158,7 @@ func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *data
 			dps[dataids[i]] = datapoint
 
 		case 13, 14:
-			eng := engine.NewStrEngine(dbEx.size, dbEx.freq, PHASE_DEFAULT)
+			eng := engine.NewStrEngine(dbEx.size, dbEx.freq, config.PHASE_DEFAULT)
 			datapoint := newStrDataPoint(dtype, eng, dbEx.offset, dbEx.size)
 			dps[dataids[i]] = datapoint
 
@@ -150,6 +166,36 @@ func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *data
 			log.Printf("Unknown data type for Payload (%s) - data ID (%s): %s", id, dataids[i], dbEx.dtype)
 		}
 	}
+	payId, err := strconv.ParseUint(id, 0, 32)
+	if err != nil {
+		log.Printf("Error converting id for Payload (%s): %s", id, err)
+	}
+
+	// get payload data size
+	size := calcPayloadSize(dps)
+
+	payloadBuf := make([]byte, size)
+
+	// initialize header variables
+	header := definitions.NewUdpHeader(uint32(payId), size )
+
+	hSize, err := calcHeaderSize(*header)
+	if err != nil {
+		log.Printf("Error calculating error size: %s", err)
+	}
+	hBuf := make([]byte, hSize)
+
+	// create tmp payload buffer for footer
+	totalPayloadSize := size + hSize
+
+	
+	// footer := definitions.NewUdpFooter(uint32(payId))
+
+	// hSize, err := calcHeaderSize(*header)
+	// if err != nil {
+	// 	log.Printf("Error calculating error size: %s", err)
+	// }
+	// hBuf := make([]byte, hSize)
 
 	return &payloadManager{
 		src:     cfg.SrcHost,
@@ -157,45 +203,61 @@ func newPayloadManager(cfg *config.Config, id string, fs time.Duration, db *data
 		srcPort: layers.UDPPort(cfg.SrcPort),
 		dstPort: layers.UDPPort(cfg.DestPort),
 		srcMAC:  cfg.Interface.HardwareAddr,
-		id:      id,
+		id:      uint(payId),
 		freq:    fs,
 		dpMap:   dps,
+		header:  header,
+		size:    size,
+		pBuf:    payloadBuf,
+		hBuf:    hBuf,
 	}
 }
 
-func (pm *payloadManager) appendPayloadHeader() {
-	if header == nil {
-		return nil, errors.New("cannot build payload from nil header")
+func (pm *payloadManager) getHeader() error {
+	if pm.header == nil {
+		return fmt.Errorf("no header found in payload manager - ID: (%d)", pm.id)
 	}
 
-	var payload []byte // Start with an empty byte slice
+	// initialize byte index
+	idx := 0
 
 	// Iterate through each element in the header
-	for i, element := range header.Elements {
+	for i, element := range pm.header.Elements {
 		if element == nil {
-			return nil, fmt.Errorf("header element at index %d is nil", i)
+			return fmt.Errorf("header element at index %d is nil", i)
 		}
 		// Call the Bytes() method on the element to get its byte representation
-		elementBytes, err := element.Bytes()
+		elementBytes, s, err := element.Bytes()
 		if err != nil {
 			// Return an informative error if getting bytes fails for any element
-			return nil, fmt.Errorf("failed to get bytes for header element at index %d: %w", i, err)
+			return fmt.Errorf("failed to get bytes for header element at index %d: %w", i, err)
 		}
-		// Append the obtained bytes to the payload
-		payload = append(payload, elementBytes...)
-	}
 
-	return payload, nil
+		// check if there is enough room for element to be added in
+		add := int(s)
+		if math.MaxUint16-idx < add {
+			return fmt.Errorf("not enough room in buffer for element at index %d", i)
+		}
+
+		// put data into buffer at current idx
+		copy(pm.hBuf[idx:], elementBytes)
+
+		idx += add
+	}
+	return nil
 }
 
 func (pm *payloadManager) buildPayload(ctx *context.Context, db *database.RedisClient) error {
 	// clear out buffer
-	for i := range pm.buffer {
-		pm.buffer[i] = 0
+	for i := range pm.pBuf {
+		pm.pBuf[i] = 0
 	}
 
-	// append payload header
-	pm.appendPayloadHeader()
+	// get payload header
+	err := pm.getHeader()
+	if err != nil {
+		return fmt.Errorf("error retrieving payload header for ID (%s): %s", pm.id, err)
+	}
 
 	// loop through datapoints and append data by offset and size
 	for id, dp := range pm.dpMap {
@@ -212,7 +274,7 @@ func (pm *payloadManager) buildPayload(ctx *context.Context, db *database.RedisC
 		db.UpdateData(id, d)
 
 		// append data by offset and size
-		err = dp.appendData(pm.buffer, newVal)
+		err = dp.appendData(pm.pBuf, newVal)
 		if err != nil {
 			return fmt.Errorf("error building data for %d: %s", id, err)
 		}

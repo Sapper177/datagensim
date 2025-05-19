@@ -4,12 +4,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // ByteSource is an interface that any header element must implement.
 // It defines a method to get the byte representation of the element.
 type ByteSource interface {
-	Bytes() ([]byte, error)
+	Bytes() ([]byte, uint16, error)
 }
 
 // --- Implementations for Constant Values ---
@@ -18,28 +19,31 @@ type ByteSource interface {
 type ByteConstant byte
 
 // Bytes returns the byte representation of the ByteConstant.
-func (b ByteConstant) Bytes() ([]byte, error) {
-	return []byte{byte(b)}, nil
+func (b ByteConstant) Bytes() ([]byte, uint16, error) {
+	s := uint16(1)
+	return []byte{byte(b)}, s, nil
 }
 
 // Uint16Constant wraps a uint16 constant.
 type Uint16Constant uint16
 
 // Bytes returns the big-endian byte representation of the Uint16Constant.
-func (u Uint16Constant) Bytes() ([]byte, error) {
-	buf := make([]byte, 2)
+func (u Uint16Constant) Bytes() ([]byte, uint16, error) {
+	s := uint16(2)
+	buf := make([]byte, s)
 	binary.BigEndian.PutUint16(buf, uint16(u)) // Use network byte order (big-endian)
-	return buf, nil
+	return buf, s, nil
 }
 
 // Uint32Constant wraps a uint32 constant.
 type Uint32Constant uint32
 
 // Bytes returns the big-endian byte representation of the Uint32Constant.
-func (u Uint32Constant) Bytes() ([]byte, error) {
-	buf := make([]byte, 4)
+func (u Uint32Constant) Bytes() ([]byte, uint16, error) {
+	s := uint16(4)
+	buf := make([]byte, s)
 	binary.BigEndian.PutUint32(buf, uint32(u)) // Use network byte order (big-endian)
-	return buf, nil
+	return buf, s, nil
 }
 
 // StringConstant wraps a string constant.
@@ -47,15 +51,19 @@ func (u Uint32Constant) Bytes() ([]byte, error) {
 type StringConstant string
 
 // Bytes returns the byte representation of the StringConstant (UTF-8 bytes).
-func (s StringConstant) Bytes() ([]byte, error) {
-	return []byte(s), nil
+func (s StringConstant) Bytes() ([]byte, uint16, error) {
+	l := len(s)
+	if l > math.MaxUint16 {
+		return []byte(s), math.MaxUint16, fmt.Errorf("string larger than uint16 max")
+	}
+	return []byte(s), uint16(l), nil
 }
 
 
 // --- Implementation for Function Results ---
 
 // ByteFunc is a function type that returns bytes and an error.
-type ByteFunc func() ([]byte, error)
+type ByteFunc func() ([]byte, uint16, error)
 
 // FuncSource wraps a ByteFunc.
 type FuncSource struct {
@@ -63,9 +71,9 @@ type FuncSource struct {
 }
 
 // Bytes calls the wrapped function and returns its result.
-func (fs FuncSource) Bytes() ([]byte, error) {
+func (fs FuncSource) Bytes() ([]byte, uint16, error) {
 	if fs.Fn == nil {
-		return nil, errors.New("FuncSource has a nil function")
+		return nil, 0, errors.New("FuncSource has a nil function")
 	}
 	return fs.Fn()
 }
@@ -77,31 +85,6 @@ type Header struct {
 	Elements []ByteSource
 }
 
-// --- Payload Builder Function ---
-
-// BuildPayload takes a Header and serializes its elements into a byte slice.
-func BuildPayload(header *Header) ([]byte, error) {
-	if header == nil {
-		return nil, errors.New("cannot build payload from nil header")
-	}
-
-	var payload []byte // Start with an empty byte slice
-
-	// Iterate through each element in the header
-	for i, element := range header.Elements {
-		if element == nil {
-             return nil, fmt.Errorf("header element at index %d is nil", i)
-        }
-		// Call the Bytes() method on the element to get its byte representation
-		elementBytes, err := element.Bytes()
-		if err != nil {
-			// Return an informative error if getting bytes fails for any element
-			return nil, fmt.Errorf("failed to get bytes for header element at index %d: %w", i, err)
-		}
-		// Append the obtained bytes to the payload
-		payload = append(payload, elementBytes...)
-	}
-
-	return payload, nil
+type Footer struct {
+	Elements []ByteSource
 }
-
